@@ -18,10 +18,17 @@ integration described below was verified against the live API during development
   the decision being evaluated.
 - Computes MAE, RMSE, bias, and wind shortfall/surplus over the matched intervals, and
   reports coverage so incomplete data is visible rather than hidden.
-- Serves this through a FastAPI backend and a React dashboard.
+- Serves this through a FastAPI backend and a four-view React dashboard: Overview, 
+  Forecast Analysis (chart + interval table + filters), Accuracy & Backtesting, and
+  Data & Methodology.
 
 It does **not** estimate a financial cost, does not require a database, and does not
 use any paid API -- Elexon's Insights Solution API is public and unauthenticated.
+
+Every item above was independently exercised (not just present as code) as part of
+the feature audit in [`docs/demo-feature-audit.md`](docs/demo-feature-audit.md), which
+also lists the one thing that is only partially verified (Docker image builds) and the
+one thing that is not yet verified at all (public deployment).
 
 ## Architecture
 
@@ -45,11 +52,16 @@ Elexon request.
 ```
 frontend/   React + TypeScript + Vite + Tailwind dashboard
 backend/    FastAPI service: ingestion, analytics, API
-docs/       (reserved for future design/architecture notes)
+docs/       demo audit, runbook, script, checklist, and submission manifest
 docker-compose.yml
 render.yaml   Render blueprint for the backend (see Deployment below)
 .env.example
 ```
+
+`docs/` contains: `demo-feature-audit.md` (what's actually verified vs. not),
+`demo-runbook.md` (minute-by-minute demo plan + upload steps), `demo-script.md`
+(the spoken script), `demo-checklist.md` (pre-recording checklist), and
+`submission-manifest.md` (the link manifest for the final submission).
 
 ### Backend (`backend/app`)
 
@@ -139,6 +151,28 @@ to configure anywhere in this stack.
 
 All four analysis endpoints take `start_date`, `end_date`, `mode`
 (`decision_time`/`as_of`), and `as_of` (required when `mode=as_of`).
+
+## Metric definitions and units
+
+All generation and error figures are in **MW** (megawatts), matching Elexon's FUELHH
+and WINDFOR fields directly -- nothing is converted to MWh or any other unit.
+
+- **MAE** (mean absolute error): average of `|forecast - actual|` across matched
+  intervals.
+- **RMSE** (root mean squared error): square root of the average squared error;
+  always `>= MAE`, and penalizes large misses more than MAE does.
+- **Bias**: average of `forecast - actual`. Positive means forecasts tended to run
+  high (overestimate); negative means they tended to run low (underestimate).
+- **MAPE** (mean absolute percentage error): `|error| / actual`, averaged, as a
+  percentage. Intervals where actual generation is below 50 MW are excluded from this
+  one metric only, to avoid a near-zero-denominator blowup -- MAE/RMSE/bias are
+  unaffected and always include every matched interval.
+- **Wind shortfall / surplus**: `max(forecast-actual, 0)` / `max(actual-forecast, 0)`
+  per interval, summed or averaged. A generation deviation, not a cost or purchase
+  volume -- see Methodology below.
+- **Coverage**: `matched_intervals / expected_intervals`, as a percentage. An interval
+  is "expected" if it falls in the requested delivery range at the dataset's native
+  half-hour grid, regardless of whether data happens to exist for it.
 
 ## Methodology
 
@@ -295,6 +329,13 @@ require you (or a future session with deployment access) to run them:
 
 If you can share the two URLs once they exist, the remaining checks can be completed in
 a follow-up session.
+
+### Demo video
+
+**Not yet recorded.** Video URL: `<PENDING>` -- see `docs/demo-runbook.md` for the
+recording/upload plan, `docs/demo-script.md` for the spoken script, and
+`docs/demo-checklist.md` before you record. `docs/submission-manifest.md` tracks every
+link needed for the final submission and whether each has actually been verified.
 
 ## Implementation status
 
