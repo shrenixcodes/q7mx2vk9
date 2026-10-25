@@ -27,3 +27,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Frontend build/test artifacts not already covered
+frontend/.vite/
+frontend/*.tsbuildinfo
