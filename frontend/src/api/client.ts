@@ -3,6 +3,13 @@ import { ApiError } from "./types";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
+  if (!BASE_URL) {
+    throw new ApiError(
+      0,
+      "VITE_API_BASE_URL is not configured for this build. Set it as an environment " +
+        "variable (e.g. in Vercel project settings) and redeploy."
+    );
+  }
   const url = new URL(path, BASE_URL);
   if (params) {
     for (const [key, value] of Object.entries(params)) {

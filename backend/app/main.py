@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -16,15 +17,23 @@ logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger("windlens.main")
 
 
+async def _startup_refresh() -> None:
+    try:
+        await get_analysis_service().ensure_loaded()
+    except DataUnavailableError as exc:
+        logger.warning("startup_ingestion_failed error=%s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.auto_refresh_on_startup:
-        service = get_analysis_service()
-        try:
-            await service.ensure_loaded()
-        except DataUnavailableError as exc:
-            logger.warning("startup_ingestion_failed error=%s", exc)
+    # Runs as a background task, not awaited here: /health must respond
+    # immediately on a cold start (e.g. Render free-tier wake-from-sleep),
+    # not block on the live Elexon fetch. Dashboard endpoints return 503
+    # via DataUnavailableError until this completes.
+    background_task = asyncio.create_task(_startup_refresh()) if settings.auto_refresh_on_startup else None
     yield
+    if background_task is not None:
+        background_task.cancel()
 
 
 app = FastAPI(title="WindLens API", version="0.1.0", lifespan=lifespan)
