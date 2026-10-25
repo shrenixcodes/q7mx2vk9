@@ -47,6 +47,7 @@ frontend/   React + TypeScript + Vite + Tailwind dashboard
 backend/    FastAPI service: ingestion, analytics, API
 docs/       (reserved for future design/architecture notes)
 docker-compose.yml
+render.yaml   Render blueprint for the backend (see Deployment below)
 .env.example
 ```
 
@@ -120,6 +121,10 @@ outside Docker).
 | `CORS_ALLOWED_ORIGINS` | backend | Comma-separated allow-list of origins. No wildcard default. |
 | `VITE_API_BASE_URL` | frontend | Base URL the browser uses to call the backend. |
 | `ELEXON_CACHE_DIR` | backend | Where the performance-only JSON cache is written. |
+| `ENVIRONMENT` | backend | `development` (default) or `production`; informational, does not itself relax any check. |
+
+None of these are secrets. The Elexon API requires no key, so there is no API credential
+to configure anywhere in this stack.
 
 ## API (`/api/v1`)
 
@@ -192,10 +197,104 @@ cd frontend && npm run build   # tsc -b && vite build -- verified, succeeds
   near-zero-denominator blowup; this is a documented, not hidden, exclusion.
 - Docker Compose was validated for syntax only in this environment (see above).
 
-## Deployment (planned, not yet done)
+## Deployment
 
-- Frontend: Vercel -- URL: _not yet deployed_.
-- Backend: Render -- URL: _not yet deployed_.
+**Current status: not yet deployed.** The GitHub repository has been connected to a
+Vercel project through the Vercel website, but no production deployment has completed
+or been verified from this environment -- no Vercel CLI, Render CLI, or `gh` CLI was
+available here, so nothing below is a claim of a live URL.
+
+- Frontend (Vercel): **`<VERCEL_URL_NOT_YET_VERIFIED>`**
+- Backend (Render): **`<RENDER_URL_NOT_YET_VERIFIED>`**
+
+Fill in the two placeholders above once each service is live, then re-run the
+"Production verification checklist" at the end of this section.
+
+### Vercel dashboard settings to verify
+
+In the Vercel project's **Settings**:
+
+| Setting | Value |
+|---|---|
+| Root Directory | `frontend` |
+| Framework Preset | Vite (should auto-detect once Root Directory is set) |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Install Command | `npm install` (default) |
+
+In **Settings -> Environment Variables**, add for Production (and Preview, if you want
+previews to hit the same backend):
+
+| Key | Value |
+|---|---|
+| `VITE_API_BASE_URL` | the Render backend URL, e.g. `https://windlens-backend.onrender.com` (no trailing slash) |
+
+No `vercel.json` is committed: the app has no client-side routes needing a rewrite rule,
+and every other setting above is expressible through the dashboard, so a repo-level
+config file would just risk conflicting with it.
+
+### Render: deploying the backend
+
+A `render.yaml` blueprint is committed at the repo root. It was written against this
+repository's actual module path (`app.main:app`) and `backend/requirements.txt`, but
+**has not been exercised against a real Render deployment from this environment** --
+treat it as a starting point and verify the first deploy manually.
+
+**Via the blueprint:** Render dashboard -> New -> Blueprint -> select this repo. Render
+will read `render.yaml` and propose a `windlens-backend` web service on the free plan
+with root directory `backend`.
+
+**Manual steps (equivalent), if you'd rather configure by hand:**
+
+1. New -> Web Service -> connect this repo.
+2. Root Directory: `backend`.
+3. Runtime: Python 3.
+4. Build Command: `pip install -r requirements.txt`
+5. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   (Render injects `$PORT`; the Dockerfile and this command both honor it -- nothing in
+   this app hardcodes port 8000 for production.)
+6. Instance Type: Free.
+7. Environment variable `CORS_ALLOWED_ORIGINS` = the exact Vercel origin, e.g.
+   `https://windlens.vercel.app` (no trailing slash, no wildcard).
+8. Health Check Path: `/health`.
+
+Render's free tier sleeps after inactivity. The app's startup ingestion fetch runs as a
+background task and does **not** block `/health` or any other route from responding on
+a cold start -- this was verified locally by hitting `/health` immediately after
+process start and confirming it returned `200` while the Elexon fetch was still
+in flight in the background (dashboard endpoints returned a clean `503
+{"detail": "ingestion data has not been loaded yet"}` until that fetch finished,
+instead of hanging or fabricating data).
+
+### Production verification checklist
+
+Checks completed **locally** (not against a public URL, since none exists yet):
+
+- [x] Backend starts and `/health` responds without waiting on Elexon.
+- [x] `/api/v1/metadata`, `/api/v1/overview`, `/api/v1/accuracy` return real, correctly
+      typed data for live January 2026 Elexon data.
+- [x] `/api/v1/forecasts` paginates and respects `limit`/`offset`.
+- [x] An invalid date range (`end_date <= start_date`) returns a clean `400`, no traceback.
+- [x] CORS: an allowed origin gets `Access-Control-Allow-Origin`; a disallowed origin
+      (`https://evil.example`) gets no CORS header at all.
+- [x] Dashboard renders real KPIs, chart, and table from the live API, across all four
+      views, in a browser pointed at `localhost`.
+- [x] No `localhost` string appears in the built `frontend/dist` bundle.
+
+Outstanding -- **cannot be completed without the two placeholder URLs above**, and
+require you (or a future session with deployment access) to run them:
+
+- [ ] Deployed frontend loads at the Vercel URL without sign-in.
+- [ ] Deployed backend's `/health` responds at the Render URL.
+- [ ] Deployed frontend successfully calls the deployed backend (check the Network tab
+      for the actual request origin and response).
+- [ ] CORS on the *deployed* backend allows the *deployed* frontend's exact origin and
+      rejects others.
+- [ ] Backend responds correctly after Render's free-tier sleep/wake cycle.
+- [ ] January 2026 date filters work end-to-end on the public URLs.
+
+If you can share the two URLs once they exist, the remaining checks can be completed in
+a follow-up session.
 
 ## Implementation status
 
